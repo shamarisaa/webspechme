@@ -1,0 +1,983 @@
+/**
+ * ============================================================
+ *  Speech Text & Sign Detector — app.js
+ *  Fitur: Login, STT, TTS, Deteksi Tangan (MediaPipe Hands),
+ *         Kamus BISINDO, Feedback, Riwayat
+ *
+ *  Dependensi CDN yang HARUS ada di HTML sebelum file ini:
+ *    - @mediapipe/hands
+ *    - @mediapipe/camera_utils
+ *    - @mediapipe/drawing_utils
+ * ============================================================
+ */
+(function () {
+  'use strict';
+
+  /* ==========================================================
+     1. DATA KAMUS BAHASA ISYARAT (BISINDO) A—Z
+     ========================================================== */
+  var SIGN_DICT = [
+    { letter:'A', desc:'Tangan mengepal, ibu jari menyamping ke samping telapak tangan.',        fingers:[1,0,0,0,0], status:'detectable', short:'Ibu juri samping' },
+    { letter:'B', desc:'Semua jari terbuka rapat mengarah ke atas, ibu jari melipat menutupi telapak.', fingers:[0,1,1,1,1], status:'detectable', short:'Jari rapat terbuka' },
+    { letter:'C', desc:'Jari-jari membengkok membentuk huruf C, ibu jari dan kelingking berhadapan.', fingers:[1,0,0,0,1], status:'complex',    short:'Bentuk huruf C' },
+    { letter:'D', desc:'Telunjuk mengarah ke atas, jari lain mengepal. Ibu jari menyentuh jari tengah.', fingers:[0,1,0,0,0], status:'detectable', short:'Telunjuk saja' },
+    { letter:'E', desc:'Semua jari melengkung ke bawah, ujung jari menyentuh telapak.',           fingers:[0,0,0,0,0], status:'complex',    short:'Jari melengkung' },
+    { letter:'F', desc:'Ibu jari dan telunjuk membentuk lingkaran, tiga jari lain terbuka ke atas.', fingers:[1,0,1,1,1], status:'detectable', short:'Lingkaran ibu jari' },
+    { letter:'G', desc:'Telunjuk mengarah ke samping horizontal, jari lain mengepal.',            fingers:[0,1,0,0,0], status:'complex',    short:'Telunjuk ke samping' },
+    { letter:'H', desc:'Telunjuk dan jari tengah mengarah ke samping sejajar, jari lain mengepal.', fingers:[0,1,1,0,0], status:'complex',    short:'Dua jari ke samping' },
+    { letter:'I', desc:'Hanya kelingking yang mengarah ke atas, jari lain mengepal.',             fingers:[0,0,0,0,1], status:'detectable', short:'Kelingking saja' },
+    { letter:'J', desc:'Seperti huruf I, lalu kelingking digerakkan melengkung ke bawah.',         fingers:[0,0,0,0,1], status:'movement',   short:'Kelingking bergerak' },
+    { letter:'K', desc:'Telunjuk dan jari tengah membentuk V, ibu jari menekuk di antaranya.',     fingers:[0,1,1,0,0], status:'complex',    short:'V dengan ibu jari' },
+    { letter:'L', desc:'Ibu jari dan telunjuk membentuk sudut L, jari lain mengepal.',            fingers:[1,1,0,0,0], status:'detectable', short:'Bentuk huruf L' },
+    { letter:'M', desc:'Tiga jari atas melipat di atas ibu jari.',                               fingers:[0,0,0,0,0], status:'complex',    short:'Tiga jari lipat' },
+    { letter:'N', desc:'Dua jari atas melipat di atas ibu jari.',                                fingers:[0,0,0,0,0], status:'complex',    short:'Dua jari lipat' },
+    { letter:'O', desc:'Semua ujung jari dan ibu jari membentuk lingkaran O.',                   fingers:[0,0,0,0,0], status:'complex',    short:'Lingkaran O' },
+    { letter:'P', desc:'Seperti K tetapi tangan diputar mengarah ke bawah.',                      fingers:[0,1,1,0,0], status:'complex',    short:'K mengarah bawah' },
+    { letter:'Q', desc:'Seperti G tetapi tangan diputar mengarah ke bawah.',                      fingers:[0,1,0,0,0], status:'complex',    short:'G mengarah bawah' },
+    { letter:'R', desc:'Telunjuk dan jari tengah menyilang satu sama lain, jari lain mengepal.',  fingers:[0,1,1,0,0], status:'complex',    short:'Jari menyilang' },
+    { letter:'S', desc:'Tangan mengepal rapat, ibu jari melingkari di depan jari-jari.',          fingers:[0,0,0,0,0], status:'complex',    short:'Tangan mengepal' },
+    { letter:'T', desc:'Ibu jari menjepit di antara telunjuk dan jari tengah.',                   fingers:[0,0,0,0,0], status:'complex',    short:'Ibu jari dijepit' },
+    { letter:'U', desc:'Telunjuk dan jari tengah rapat mengarah ke atas, jari lain mengepal.',    fingers:[0,1,1,0,0], status:'detectable', short:'Dua jari rapat atas' },
+    { letter:'V', desc:'Telunjuk dan jari tengah membentuk V (peace), jari lain mengepal.',       fingers:[0,1,1,0,0], status:'detectable', short:'Tanda peace' },
+    { letter:'W', desc:'Telunjuk, jari tengah, kelingking mengarah ke atas, manis mengepal.',     fingers:[0,1,1,0,1], status:'detectable', short:'Tiga jari terbuka' },
+    { letter:'X', desc:'Telunjuk membengkok ke atas seperti kait, jari lain mengepal.',           fingers:[0,0,0,0,0], status:'complex',    short:'Telunjuk bengkok' },
+    { letter:'Y', desc:'Ibu jari dan kelingking mengarah ke atas (shaka), jari lain mengepal.',   fingers:[1,0,0,0,1], status:'detectable', short:'Tanda shaka' },
+    { letter:'Z', desc:'Telunjuk menggambar huruf Z di udara dari kiri ke kanan.',                fingers:[0,1,0,0,0], status:'movement',   short:'Telunjuk gambar Z' },
+  ];
+
+  /**
+   * Pemetaan pola jari → huruf
+   * Format: [thumb, index, middle, ring, pinky] (1=naik, 0=turun)
+   * Hanya huruf yang POLA JARINYA UNIK dan bisa dibedakan tanpa konteks gerakan
+   */
+  var FINGER_MAP = {
+    '10000': 'A',   // Ibu jari samping
+    '01111': 'B',   // Semua jari terbuka
+    '00100': 'D',   // Hanya telunjuk (fallback)
+    '10001': 'Y',   // Shaka
+    '00001': 'I',   // Hanya kelingking
+    '11000': 'L',   // Bentuk L
+    '10111': 'F',   // Lingkaran ibu jari + 3 jari
+    '01101': 'W',   // 3 jari terbuka tanpa manis
+  };
+
+  /* ==========================================================
+     2. UTILITAS UMUM
+     ========================================================== */
+
+  /** Toast notification */
+  function toast(msg, type) {
+    type = type || 'info';
+    var box = document.getElementById('toast-box');
+    if (!box) {
+      box = document.createElement('div');
+      box.id = 'toast-box';
+      box.style.cssText = 'position:fixed;top:70px;right:1rem;z-index:999;display:flex;flex-direction:column;gap:.4rem;pointer-events:none';
+      document.body.appendChild(box);
+    }
+    var el = document.createElement('div');
+    el.style.cssText = 'pointer-events:auto;background:#fff;border:1px solid #d8cde8;border-radius:8px;padding:.6rem 1rem;font-size:.84rem;font-weight:600;font-family:Nunito,sans-serif;color:#2d1f45;box-shadow:0 8px 32px rgba(45,31,69,.12);animation:slideIn .3s ease,fadeOut .4s ease 2.6s forwards;max-width:300px;border-left:4px solid ' + (type === 'ok' ? '#43a047' : type === 'err' ? '#e53935' : '#7b5ea7');
+    el.textContent = msg;
+    box.appendChild(el);
+    setTimeout(function () { if (el.parentNode) el.remove(); }, 3200);
+  }
+
+  /** Inject animasi CSS untuk toast (hanya sekali) */
+  (function injectToastCSS() {
+    if (document.getElementById('toast-css')) return;
+    var s = document.createElement('style');
+    s.id = 'toast-css';
+    s.textContent = '@keyframes slideIn{from{transform:translateX(100%);opacity:0}to{transform:translateX(0);opacity:1}}@keyframes fadeOut{to{opacity:0;transform:translateY(-6px)}}@keyframes fadeUp{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}';
+    document.head.appendChild(s);
+  })();
+
+  function timeNow() {
+    return new Date().toLocaleTimeString('id-ID', { hour:'2-digit', minute:'2-digit', second:'2-digit' });
+  }
+
+  function esc(str) {
+    var d = document.createElement('div');
+    d.textContent = str;
+    return d.innerHTML;
+  }
+
+  /** Hitung jarak euclidean 2D antara dua landmark */
+  function dist2D(a, b) {
+    var dx = a.x - b.x, dy = a.y - b.y;
+    return Math.sqrt(dx * dx + dy * dy);
+  }
+
+  /** Hitung sudut (derajat) di titik b, antara garis b→a dan b→c */
+  function angleDeg(a, b, c) {
+    var ba = { x: a.x - b.x, y: a.y - b.y };
+    var bc = { x: c.x - b.x, y: c.y - b.y };
+    var dot = ba.x * bc.x + ba.y * bc.y;
+    var magBA = Math.sqrt(ba.x * ba.x + ba.y * ba.y);
+    var magBC = Math.sqrt(bc.x * bc.x + bc.y * bc.y);
+    if (magBA < 1e-6 || magBC < 1e-6) return 0;
+    var cos = Math.max(-1, Math.min(1, dot / (magBA * magBC)));
+    return Math.acos(cos) * (180 / Math.PI);
+  }
+
+  /* ==========================================================
+     3. NAVIGASI HALAMAN
+     ========================================================== */
+
+  var pages = {
+    landing: document.getElementById('page-landing'),
+    auth:    document.getElementById('page-auth'),
+    app:     document.getElementById('page-app'),
+  };
+
+  function showPage(name) {
+    Object.keys(pages).forEach(function (k) {
+      if (pages[k]) pages[k].classList.toggle('hidden', k !== name);
+    });
+  }
+
+  var userBadge      = document.getElementById('user-badge');
+  var btnHeaderAuth  = document.getElementById('btn-header-auth');
+  var btnHeaderLogout = document.getElementById('btn-header-logout');
+
+  btnHeaderAuth.addEventListener('click', function () {
+    showPage('auth'); switchAuthTab('login');
+  });
+  btnHeaderLogout.addEventListener('click', doLogout);
+
+  document.getElementById('btn-go-login').addEventListener('click', function () {
+    showPage('auth'); switchAuthTab('login');
+  });
+  document.getElementById('btn-go-register').addEventListener('click', function () {
+    showPage('auth'); switchAuthTab('register');
+  });
+  document.getElementById('btn-auth-back').addEventListener('click', function () {
+    showPage('landing');
+  });
+
+  /* ==========================================================
+     4. AUTH (LOGIN / REGISTER) — Mock tanpa backend
+     ========================================================== */
+
+  var authTabs   = document.querySelectorAll('.auth-tab');
+  var formLogin  = document.getElementById('form-login');
+  var formReg    = document.getElementById('form-register');
+
+  function switchAuthTab(tab) {
+    authTabs.forEach(function (b) { b.classList.toggle('active', b.dataset.auth === tab); });
+    formLogin.classList.toggle('hidden', tab !== 'login');
+    formReg.classList.toggle('hidden', tab !== 'register');
+  }
+  authTabs.forEach(function (b) {
+    b.addEventListener('click', function () { switchAuthTab(b.dataset.auth); });
+  });
+
+  function doLogin(email) {
+    userBadge.textContent = email;
+    userBadge.classList.add('logged-in');
+    btnHeaderAuth.classList.add('hidden');
+    btnHeaderLogout.classList.remove('hidden');
+    showPage('app');
+    toast('Selamat datang!', 'ok');
+    addHistory('LOGIN', 'Masuk sebagai ' + email);
+  }
+
+  function doLogout() {
+    userBadge.textContent = 'Belum masuk';
+    userBadge.classList.remove('logged-in');
+    btnHeaderAuth.classList.remove('hidden');
+    btnHeaderLogout.classList.add('hidden');
+    showPage('landing');
+    stopCamera();
+    toast('Anda telah keluar', 'info');
+  }
+
+  formLogin.addEventListener('submit', function (e) {
+    e.preventDefault();
+    var email = document.getElementById('login-email').value.trim();
+    var pass  = document.getElementById('login-pass').value;
+    if (!email || !pass) { toast('Isi email dan password', 'err'); return; }
+    if (pass.length < 6) { toast('Password minimal 6 karakter', 'err'); return; }
+    doLogin(email);
+  });
+
+  formReg.addEventListener('submit', function (e) {
+    e.preventDefault();
+    var name  = document.getElementById('reg-name').value.trim();
+    var email = document.getElementById('reg-email').value.trim();
+    var pass  = document.getElementById('reg-pass').value;
+    if (!name || !email || !pass) { toast('Lengkapi semua field', 'err'); return; }
+    if (pass.length < 6) { toast('Password minimal 6 karakter', 'err'); return; }
+    doLogin(email);
+    toast('Akun berhasil dibuat, selamat datang ' + name, 'ok');
+  });
+
+  /* ==========================================================
+     5. TAB SWITCHING (STT / TTS / KAMERA / KAMUS / FEEDBACK / RIWAYAT)
+     ========================================================== */
+
+  var appTabs   = document.querySelectorAll('.tab');
+  var appPanels = document.querySelectorAll('.tab-panel');
+
+  appTabs.forEach(function (tab) {
+    tab.addEventListener('click', function () {
+      var target = tab.dataset.tab;
+      appTabs.forEach(function (t) { t.classList.toggle('active', t === tab); });
+      appPanels.forEach(function (p) { p.classList.toggle('hidden', p.dataset.panel !== target); });
+    });
+  });
+
+  /* ==========================================================
+     6. SPEECH-TO-TEXT (Mikrofon → Teks)
+         Menggunakan Web Speech API — SpeechRecognition
+     ========================================================== */
+
+  var sttStatus   = document.getElementById('stt-status');
+  var sttOutput   = document.getElementById('stt-output');
+  var btnSttStart = document.getElementById('btn-stt-start');
+  var btnSttStop  = document.getElementById('btn-stt-stop');
+  var recognition = null;
+  var sttRunning  = false;
+
+  var SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+
+  if (SpeechRecognition) {
+    recognition = new SpeechRecognition();
+    recognition.lang          = 'id-ID';
+    recognition.continuous    = true;
+    recognition.interimResults = true;
+
+    recognition.onresult = function (e) {
+      var fin = '', inter = '';
+      for (var i = e.resultIndex; i < e.results.length; i++) {
+        var t = e.results[i][0].transcript;
+        if (e.results[i].isFinal) fin += t;
+        else inter += t;
+      }
+      if (fin) {
+        sttOutput.value += (sttOutput.value ? ' ' : '') + fin;
+        addHistory('STT', fin.substring(0, 100));
+      }
+      sttStatus.textContent = 'Mendengar... ' + inter;
+    };
+
+    recognition.onerror = function (e) {
+      sttStatus.textContent = 'Error: ' + e.error;
+      if (e.error === 'not-allowed') toast('Izin mikrofon ditolak oleh browser', 'err');
+      if (e.error === 'no-speech')    sttStatus.textContent = 'Tidak ada suara terdeteksi, coba lagi...';
+      sttRunning = false;
+      updateSttBtns();
+    };
+
+    recognition.onend = function () {
+      if (sttRunning) {
+        try { recognition.start(); } catch (ex) { /* sudah berjalan */ }
+      } else {
+        sttStatus.textContent = 'Status: idle';
+        updateSttBtns();
+      }
+    };
+  }
+
+  function updateSttBtns() {
+    btnSttStart.disabled = sttRunning;
+    btnSttStop.disabled  = !sttRunning;
+  }
+
+  btnSttStart.addEventListener('click', function () {
+    if (!recognition) { toast('Browser tidak mendukung Speech Recognition. Gunakan Chrome atau Edge.', 'err'); return; }
+    sttRunning = true;
+    updateSttBtns();
+    try {
+      recognition.start();
+      sttStatus.textContent = 'Status: mendengar...';
+      toast('Mulai mendengarkan', 'ok');
+      addHistory('STT', 'Mulai mendengarkan');
+    } catch (ex) {
+      toast('Gagal memulai, coba lagi', 'err');
+      sttRunning = false;
+      updateSttBtns();
+    }
+  });
+
+  btnSttStop.addEventListener('click', function () {
+    sttRunning = false;
+    try { recognition.stop(); } catch (ex) { /* */ }
+    sttStatus.textContent = 'Status: dihentikan';
+    updateSttBtns();
+    addHistory('STT', 'STT dihentikan');
+  });
+
+  /* ==========================================================
+     7. TEXT-TO-SPEECH (Teks → Suara)
+         Menggunakan Web Speech API — SpeechSynthesis
+     ========================================================== */
+
+  var ttsVoice = document.getElementById('tts-voice');
+  var ttsInput = document.getElementById('tts-input');
+  var voices   = [];
+
+  function loadVoices() {
+    voices = speechSynthesis.getVoices();
+    ttsVoice.innerHTML = '';
+    if (!voices.length) return;
+    /* Prioritaskan bahasa Indonesia */
+    var idV = voices.filter(function (v) { return v.lang.startsWith('id'); });
+    var otV = voices.filter(function (v) { return !v.lang.startsWith('id'); });
+    var sorted = idV.concat(otV);
+    sorted.forEach(function (v, i) {
+      var o = document.createElement('option');
+      o.value = voices.indexOf(v);
+      o.textContent = v.name + ' (' + v.lang + ')';
+      if (i === 0) o.selected = true;
+      ttsVoice.appendChild(o);
+    });
+  }
+
+  speechSynthesis.onvoiceschanged = loadVoices;
+  loadVoices();
+
+  document.getElementById('btn-tts-speak').addEventListener('click', function () {
+    var text = ttsInput.value.trim();
+    if (!text) { toast('Masukkan teks terlebih dahulu', 'err'); return; }
+    speechSynthesis.cancel();
+    var utt = new SpeechSynthesisUtterance(text);
+    var idx = parseInt(ttsVoice.value, 10);
+    if (voices[idx]) utt.voice = voices[idx];
+    utt.lang = 'id-ID';
+    utt.rate = 1;
+    utt.onend = function () { toast('Selesai membacakan', 'ok'); };
+    speechSynthesis.speak(utt);
+    addHistory('TTS', text.substring(0, 80));
+    toast('Membacakan teks...', 'info');
+  });
+
+  document.getElementById('btn-tts-stop').addEventListener('click', function () {
+    speechSynthesis.cancel();
+    toast('Pembacaan dihentikan', 'info');
+  });
+
+  /* ==========================================================
+     8. DETEKSI GERAKAN TANGAN (Kamera → Huruf Isyarat)
+         Menggunakan MediaPipe Hands untuk mendeteksi 21 landmark,
+         lalu klasifikasi heuristic lokal ke huruf BISINDO.
+
+         Catatan: MediaPipe Hands adalah engine yang sama yang
+         digunakan oleh @tensorflow-models/hand-pose-detection
+         dengan runtime "mediapipe". Langsung dipakai agar
+         lebih ringan tanpa overhead tambahan.
+     ========================================================== */
+
+  /* --- Elemen DOM --- */
+  var camVideo        = document.getElementById('cam-video');
+  var camCanvas       = document.getElementById('cam-canvas');
+  var camCtx          = camCanvas.getContext('2d');
+  var camOverlay      = document.getElementById('cam-overlay');
+  var camLoader       = document.getElementById('cam-loader');
+  var btnCamStart     = document.getElementById('btn-cam-start');
+  var camStatusEl     = document.getElementById('cam-status');
+  var detectedLetterEl = document.getElementById('detected-letter');
+  var detectedLabelEl  = document.getElementById('detected-label');
+  var signOutputEl    = document.getElementById('sign-output');
+  var btnSignAdd      = document.getElementById('btn-sign-add');
+
+  /* --- State --- */
+  var handsInstance   = null;
+  var cameraStream    = null;
+  var cameraRunning   = false;
+  var animFrameId     = null;
+  var signText        = '';
+  var lastConfirmed   = null;
+
+  /* Smoothing buffer: simpan N hasil terakhir, ambil mayoritas */
+  var detBuffer       = [];
+  var DET_BUF_SIZE    = 10;
+
+  /* ----------------------------------------------------------
+     8a. Deteksi posisi jari dari 21 landmark
+     ---------------------------------------------------------- */
+  function getFingerStates(lm) {
+    /**
+     * lm = array 21 titik {x, y, z} ternormalisasi 0-1
+     * Koordinat y meningkat ke bawah (0 = atas, 1 = bawah)
+     *
+     * Index landmark:
+     *   0  = wrist
+     *   1-4  = thumb  (CMC, MCP, IP, TIP)
+     *   5-8  = index  (MCP, PIP, DIP, TIP)
+     *   9-12 = middle (MCP, PIP, DIP, TIP)
+     *  13-16 = ring   (MCP, PIP, DIP, TIP)
+     *  17-20 = pinky  (MCP, PIP, DIP, TIP)
+     */
+
+    /* Thumb: cek apakah tip (4) menjauh dari telapak dibanding IP (3)
+       Untuk tangan kanan di kamera mirror, thumb "naik" jika tip.x jauh dari palm */
+    var palmCenterX = (lm[0].x + lm[5].x + lm[17].x) / 3;
+    var thumbTipDist = Math.abs(lm[4].x - palmCenterX);
+    var thumbIpDist  = Math.abs(lm[3].x - palmCenterX);
+    var thumbUp = thumbTipDist > thumbIpDist * 1.15 && lm[4].y < lm[2].y + 0.05;
+
+    /* Index: tip (8) di atas PIP (6) */
+    var indexUp = lm[8].y < lm[6].y - 0.025;
+
+    /* Middle: tip (12) di atas PIP (10) */
+    var middleUp = lm[12].y < lm[10].y - 0.025;
+
+    /* Ring: tip (16) di atas PIP (14) */
+    var ringUp = lm[16].y < lm[14].y - 0.025;
+
+    /* Pinky: tip (20) di atas PIP (18) */
+    var pinkyUp = lm[20].y < lm[18].y - 0.025;
+
+    return [
+      thumbUp  ? 1 : 0,
+      indexUp  ? 1 : 0,
+      middleUp ? 1 : 0,
+      ringUp   ? 1 : 0,
+      pinkyUp  ? 1 : 0
+    ];
+  }
+
+  /* ----------------------------------------------------------
+     8b. Analisis tambahan untuk membedakan huruf dengan pola sama
+     ---------------------------------------------------------- */
+  function getExtraFeatures(lm) {
+    var features = {};
+
+    /* Jarak telunjuk-tengah (untuk bedakan U=rapat vs V=terbuka vs W=lebar) */
+    var idxMidDist = dist2D(lm[8], lm[12]);
+    features.idxMidDist = idxMidDist;
+
+    /* Jarak telunjuk-ring */
+    var idxRingDist = dist2D(lm[8], lm[16]);
+    features.idxRingDist = idxRingDist;
+
+    /* Sudut telunjuk-di-PIP (8→6→5): jari bengkok vs lurus */
+    features.indexAngle = angleDeg(lm[8], lm[6], lm[5]);
+
+    /* Sudut ibu jari (4→3→2) */
+    features.thumbAngle = angleDeg(lm[4], lm[3], lm[2]);
+
+    /* Jarak thumb tip ke index tip (untuk deteksi lingkaran F) */
+    features.thumbIndexDist = dist2D(lm[4], lm[8]);
+
+    /* Jarak thumb tip ke middle tip */
+    features.thumbMiddleDist = dist2D(lm[4], lm[12]);
+
+    return features;
+  }
+
+  /* ----------------------------------------------------------
+     8c. Klasifikasi lengkap: pola jari + fitur tambahan → huruf
+     ---------------------------------------------------------- */
+  function classifyHand(lm) {
+    var fingers = getFingerStates(lm);
+    var key = fingers.join('');
+    var feat = getExtraFeatures(lm);
+
+    /* 1. Cek dulu di FINGER_MAP (pola unik sederhana) */
+    if (FINGER_MAP[key]) {
+      var mapped = FINGER_MAP[key];
+
+      /* Namun beberapa pola sama tapi huruf beda — perlu fitur tambahan */
+
+      /* Pola 01100 → bisa U, V, atau K/R/H/G
+         Bedakan berdasarkan jarak telunjuk-tengah */
+      if (key === '01100') {
+        if (feat.idxMidDist < 0.045) return 'U';       // Jari rapat
+        if (feat.idxMidDist < 0.09)  return 'V';       // Jari sedang terbuka
+        return 'V';                                     // Default V
+      }
+
+      return mapped;
+    }
+
+    /* 2. Pola khusus yang butuh analisis lebih dalam */
+
+    /* F: pola 10111 — thumb+index dekat (lingkaran), 3 jari atas */
+    if (key === '10111' && feat.thumbIndexDist < 0.06) return 'F';
+
+    /* Y: pola 10001 sudah di map, tapi cek ulang */
+    if (key === '10001') return 'Y';
+
+    /* C: thumb dan pinky terbuka, tengah 3 jari turun/tengah — cek sudut */
+    if (key === '10001' && feat.thumbAngle < 120) return 'C';
+
+    /* 3. Coba heuristic lanjutan untuk huruf kompleks */
+
+    /* E: semua jari bengkok (pola 00000) tapi jari TIDAK mengepal rapat
+       Cek apakah ujung jari masih menjauh dari wrist */
+    if (key === '00000') {
+      var avgFingerDist = (dist2D(lm[8], lm[0]) + dist2D(lm[12], lm[0]) + dist2D(lm[16], lm[0])) / 3;
+      if (avgFingerDist > 0.2) return 'E';  // Jari melengkung tapi terbuka
+      return null; // Tangan mengepal rapat — tidak bisa bedakan S/M/N/O/T
+    }
+
+    /* W: 01101 — telunjuk, tengah, kelingking atas, manis bawah */
+    if (key === '01101') return 'W';
+
+    return null; // Tidak bisa diklasifikasikan dengan yakin
+  }
+
+  /* ----------------------------------------------------------
+     8d. Smoothing: butuh N frame konsisten sebelum konfirmasi
+     ---------------------------------------------------------- */
+  function smoothDetect(letter) {
+    detBuffer.push(letter);
+    if (detBuffer.length > DET_BUF_SIZE) detBuffer.shift();
+    if (detBuffer.length < 5) return null;
+
+    /* Hitung frekuensi tiap huruf */
+    var counts = {};
+    detBuffer.forEach(function (l) {
+      if (l) counts[l] = (counts[l] || 0) + 1;
+    });
+
+    var best = null, bestCount = 0;
+    Object.keys(counts).forEach(function (k) {
+      if (counts[k] > bestCount) { bestCount = counts[k]; best = k; }
+    });
+
+    /* Butuh minimal 60% konsisten */
+    return bestCount >= Math.ceil(DET_BUF_SIZE * 0.6) ? best : null;
+  }
+
+  /* ----------------------------------------------------------
+     8e. Gambar landmark & koneksi di canvas
+     ---------------------------------------------------------- */
+  function drawHand(landmarks) {
+    var w = camCanvas.width, h = camCanvas.height;
+    camCtx.clearRect(0, 0, w, h);
+
+    /* Koneksi skeleton tangan */
+    var conns = [
+      [0,1],[1,2],[2,3],[3,4],
+      [0,5],[5,6],[6,7],[7,8],
+      [0,9],[9,10],[10,11],[11,12],
+      [0,13],[13,14],[14,15],[15,16],
+      [0,17],[17,18],[18,19],[19,20],
+      [5,9],[9,13],[13,17]
+    ];
+
+    /* Garis koneksi */
+    camCtx.strokeStyle = 'rgba(123, 94, 167, 0.65)';
+    camCtx.lineWidth = 3;
+    camCtx.lineCap = 'round';
+    conns.forEach(function (pair) {
+      camCtx.beginPath();
+      camCtx.moveTo(landmarks[pair[0]].x * w, landmarks[pair[0]].y * h);
+      camCtx.lineTo(landmarks[pair[1]].x * w, landmarks[pair[1]].y * h);
+      camCtx.stroke();
+    });
+
+    /* Titik landmark */
+    var tipIndices = [4, 8, 12, 16, 20];
+    landmarks.forEach(function (lm, i) {
+      var isTip = tipIndices.indexOf(i) >= 0;
+      var r = isTip ? 7 : 4;
+      camCtx.beginPath();
+      camCtx.arc(lm.x * w, lm.y * h, r, 0, 2 * Math.PI);
+      camCtx.fillStyle = isTip ? '#e53935' : '#7b5ea7';
+      camCtx.fill();
+      camCtx.strokeStyle = '#ffffff';
+      camCtx.lineWidth = 2;
+      camCtx.stroke();
+    });
+
+    /* Label huruf di telapak tangan */
+    if (lastConfirmed) {
+      camCtx.font = 'bold 28px Nunito, sans-serif';
+      camCtx.fillStyle = 'rgba(255,255,255,0.85)';
+      camCtx.textAlign = 'center';
+      camCtx.fillText(lastConfirmed, landmarks[0].x * w, landmarks[0].y * h - 15);
+    }
+  }
+
+  /* ----------------------------------------------------------
+     8f. Callback utama dari MediaPipe saat mendeteksi tangan
+     ---------------------------------------------------------- */
+  function onHandResults(results) {
+    /* Sinkronkan ukuran canvas dengan video */
+    if (camVideo.videoWidth > 0 && (camCanvas.width !== camVideo.videoWidth || camCanvas.height !== camVideo.videoHeight)) {
+      camCanvas.width  = camVideo.videoWidth;
+      camCanvas.height = camVideo.videoHeight;
+    }
+
+    if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+      var lm = results.multiHandLandmarks[0];
+      drawHand(lm);
+
+      /* Klasifikasi */
+      var letter = classifyHand(lm);
+      var confirmed = smoothDetect(letter);
+
+      if (confirmed && confirmed !== lastConfirmed) {
+        lastConfirmed = confirmed;
+        detectedLetterEl.textContent = confirmed;
+        detectedLetterEl.classList.add('flash');
+        setTimeout(function () { detectedLetterEl.classList.remove('flash'); }, 250);
+        detectedLabelEl.textContent = 'Huruf terdeteksi: ' + confirmed;
+        btnSignAdd.disabled = false;
+      } else if (!confirmed && lastConfirmed) {
+        /* Jangan langsung reset, biarkan buffer menentukan */
+      } else if (!letter) {
+        detectedLabelEl.textContent = 'Menganalisis posisi jari...';
+      }
+    } else {
+      camCtx.clearRect(0, 0, camCanvas.width, camCanvas.height);
+      detectedLabelEl.textContent = 'Tidak ada tangan terdeteksi';
+      detBuffer = [];
+      lastConfirmed = null;
+      btnSignAdd.disabled = true;
+    }
+  }
+
+  /* ----------------------------------------------------------
+     8g. Loop pemrosesan frame (manual, lebih reliable)
+     ---------------------------------------------------------- */
+  function processFrame() {
+    if (!cameraRunning || !handsInstance) return;
+    if (camVideo.readyState >= 2) {
+      handsInstance.send({ image: camVideo }).then(onHandResults).catch(function (err) {
+        /* Jangan spam error, kebanyakan adalah frame yang terlewat */
+      });
+    }
+    animFrameId = requestAnimationFrame(processFrame);
+  }
+
+  /* ----------------------------------------------------------
+     8h. Inisialisasi model MediaPipe Hands
+     ---------------------------------------------------------- */
+  async function initHands() {
+    camLoader.textContent = 'Memuat model deteksi tangan...';
+    btnCamStart.classList.add('hidden');
+
+    try {
+      if (typeof Hands === 'undefined') {
+        throw new Error('Library MediaPipe Hands tidak ditemukan. Pastikan CDN script sudah dimuat.');
+      }
+
+      handsInstance = new Hands({
+        locateFile: function (file) {
+          return 'https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1675469240/' + file;
+        }
+      });
+
+      handsInstance.setOptions({
+        maxNumHands: 1,
+        modelComplexity: 1,       // 0=lite, 1=full
+        minDetectionConfidence: 0.7,
+        minTrackingConfidence: 0.5
+      });
+
+      handsInstance.onResults(onHandResults);
+
+      /* Trigger download model dengan mengirim frame kosong */
+      camLoader.textContent = 'Mengunduh model (~5MB, mungkin perlu beberapa detik)...';
+      await handsInstance.send({ image: new ImageData(1, 1) });
+
+      camLoader.textContent = 'Model siap!';
+      btnCamStart.classList.remove('hidden');
+      btnCamStart.textContent = 'Aktifkan Kamera';
+      btnCamStart.onclick = startCamera;
+      camStatusEl.textContent = 'Status: model siap — tekan tombol untuk mulai';
+
+    } catch (err) {
+      console.error('Init Hands gagal:', err);
+      camLoader.textContent = 'Gagal memuat model: ' + err.message;
+      btnCamStart.classList.remove('hidden');
+      btnCamStart.textContent = 'Coba Lagi';
+      btnCamStart.onclick = function () { initHands(); };
+    }
+  }
+
+  /* ----------------------------------------------------------
+     8i. Mulai / Hentikan kamera
+     ---------------------------------------------------------- */
+  async function startCamera() {
+    try {
+      camLoader.textContent = 'Meminta izin kamera...';
+      btnCamStart.classList.add('hidden');
+
+      cameraStream = await navigator.mediaDevices.getUserMedia({
+        video: {
+          width:  { ideal: 640 },
+          height: { ideal: 480 },
+          facingMode: 'user'
+        }
+      });
+
+      camVideo.srcObject = cameraStream;
+      await camVideo.play();
+
+      camCanvas.width  = camVideo.videoWidth  || 640;
+      camCanvas.height = camVideo.videoHeight || 480;
+
+      camOverlay.classList.add('hidden');
+      cameraRunning = true;
+      camStatusEl.textContent = 'Status: kamera aktif — arahkan tangan ke kamera';
+      addHistory('KAMERA', 'Kamera diaktifkan untuk deteksi isyarat');
+      toast('Kamera aktif. Arahkan tangan Anda.', 'ok');
+
+      processFrame();
+
+    } catch (err) {
+      console.error('Camera error:', err);
+      if (err.name === 'NotAllowedError') {
+        camLoader.textContent = 'Izin kamera ditolak. Aktifkan di pengaturan browser > Privasi > Kamera.';
+      } else if (err.name === 'NotFoundError') {
+        camLoader.textContent = 'Tidak ada kamera ditemukan di perangkat ini.';
+      } else {
+        camLoader.textContent = 'Gagal mengakses kamera: ' + err.message;
+      }
+      btnCamStart.classList.remove('hidden');
+      btnCamStart.textContent = 'Coba Lagi';
+    }
+  }
+
+  function stopCamera() {
+    cameraRunning = false;
+    if (animFrameId) { cancelAnimationFrame(animFrameId); animFrameId = null; }
+    if (cameraStream) {
+      cameraStream.getTracks().forEach(function (t) { t.stop(); });
+      cameraStream = null;
+    }
+    camVideo.srcObject = null;
+    camCtx.clearRect(0, 0, camCanvas.width, camCanvas.height);
+    camOverlay.classList.remove('hidden');
+    camLoader.textContent = 'Memuat model deteksi...';
+    btnCamStart.classList.add('hidden');
+    camStatusEl.textContent = 'Status: kamera belum aktif';
+    detectedLetterEl.textContent = '?';
+    detectedLabelEl.textContent  = 'Menunggu deteksi...';
+    detBuffer = [];
+    lastConfirmed = null;
+    btnSignAdd.disabled = true;
+  }
+
+  /* ----------------------------------------------------------
+     8j. Tombol builder teks isyarat
+     ---------------------------------------------------------- */
+  btnSignAdd.addEventListener('click', function () {
+    var l = detectedLetterEl.textContent;
+    if (l && l !== '?') {
+      signText += l;
+      signOutputEl.textContent = signText || '_';
+      toast('Huruf "' + l + '" ditambahkan', 'ok');
+      addHistory('ISYARAT', 'Huruf ' + l + ' ditambahkan');
+    }
+  });
+
+  document.getElementById('btn-sign-space').addEventListener('click', function () {
+    signText += ' ';
+    signOutputEl.textContent = signText || '_';
+  });
+
+  document.getElementById('btn-sign-back').addEventListener('click', function () {
+    signText = signText.slice(0, -1);
+    signOutputEl.textContent = signText || '_';
+  });
+
+  document.getElementById('btn-sign-clear').addEventListener('click', function () {
+    signText = '';
+    signOutputEl.textContent = '_';
+  });
+
+  /* Mulai inisialisasi model saat halaman dimuat */
+  initHands();
+
+  /* ==========================================================
+     9. KAMUS BAHASA ISYARAT (Grid interaktif A-Z)
+     ========================================================== */
+
+  var kamusGrid   = document.getElementById('kamus-grid');
+  var kamusSearch = document.getElementById('kamus-search');
+  var kamusModal  = document.getElementById('kamus-modal');
+
+  function renderKamus(filter) {
+    kamusGrid.innerHTML = '';
+    filter = (filter || '').toLowerCase();
+
+    SIGN_DICT.forEach(function (item) {
+      if (filter && item.letter.toLowerCase().indexOf(filter) < 0 &&
+          item.desc.toLowerCase().indexOf(filter) < 0 &&
+          item.short.toLowerCase().indexOf(filter) < 0) return;
+
+      var card = document.createElement('div');
+      card.className = 'kamus-card';
+      card.setAttribute('role', 'button');
+      card.setAttribute('tabindex', '0');
+      card.setAttribute('aria-label', 'Huruf ' + item.letter + ': ' + item.short);
+
+      var letterDiv = document.createElement('div');
+      letterDiv.className = 'kc-letter';
+      letterDiv.textContent = item.letter;
+      card.appendChild(letterDiv);
+
+      /* Diagram 5 titik jari */
+      var fDiv = document.createElement('div');
+      fDiv.className = 'kc-fingers';
+      item.fingers.forEach(function (up) {
+        var dot = document.createElement('span');
+        dot.className = 'kc-dot' + (up ? ' up' : '');
+        fDiv.appendChild(dot);
+      });
+      card.appendChild(fDiv);
+
+      var shortP = document.createElement('div');
+      shortP.className = 'kc-short';
+      shortP.textContent = item.short;
+      card.appendChild(shortP);
+
+      card.addEventListener('click', function () { openKamusModal(item); });
+      card.addEventListener('keydown', function (e) { if (e.key === 'Enter') openKamusModal(item); });
+      kamusGrid.appendChild(card);
+    });
+
+    if (!kamusGrid.children.length) {
+      kamusGrid.innerHTML = '<p style="grid-column:1/-1;text-align:center;color:var(--text-muted);padding:2rem 0;">Tidak ditemukan.</p>';
+    }
+  }
+
+  kamusSearch.addEventListener('input', function () {
+    renderKamus(kamusSearch.value);
+  });
+
+  function openKamusModal(item) {
+    document.getElementById('modal-letter').textContent = item.letter;
+    document.getElementById('modal-desc').textContent = item.desc;
+
+    var mf = document.getElementById('modal-fingers');
+    mf.innerHTML = '';
+    var labels = ['Ibu', 'Telunjuk', 'Tengah', 'Manis', 'Kelingking'];
+    item.fingers.forEach(function (up, i) {
+      var wrap = document.createElement('div');
+      wrap.style.textAlign = 'center';
+      var dot = document.createElement('div');
+      dot.className = 'mf-dot' + (up ? ' up' : '');
+      wrap.appendChild(dot);
+      var lbl = document.createElement('div');
+      lbl.className = 'mf-label';
+      lbl.textContent = labels[i];
+      wrap.appendChild(lbl);
+      mf.appendChild(wrap);
+    });
+
+    var badge = document.getElementById('modal-badge');
+    badge.className = 'modal-badge ' + item.status;
+    badge.textContent =
+      item.status === 'detectable' ? 'Dapat dideteksi otomatis' :
+      item.status === 'movement'   ? 'Memerlukan gerakan' :
+                                     'Bentuk kompleks — gunakan kamus visual';
+
+    kamusModal.classList.remove('hidden');
+  }
+
+  document.getElementById('kamus-modal-close').addEventListener('click', function () {
+    kamusModal.classList.add('hidden');
+  });
+  kamusModal.addEventListener('click', function (e) {
+    if (e.target === kamusModal) kamusModal.classList.add('hidden');
+  });
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape' && !kamusModal.classList.contains('hidden')) {
+      kamusModal.classList.add('hidden');
+    }
+  });
+
+  renderKamus();
+
+  /* ==========================================================
+     10. FEEDBACK
+     ========================================================== */
+
+  var fbText   = document.getElementById('fb-text');
+  var fbStatus = document.getElementById('fb-status');
+
+  document.getElementById('btn-fb-submit').addEventListener('click', function () {
+    var type = document.querySelector('input[name="fb-type"]:checked').value;
+    var text = fbText.value.trim();
+    if (!text) {
+      fbStatus.textContent = 'Tulis masukan terlebih dahulu.';
+      fbStatus.className = 'fb-status err';
+      return;
+    }
+    fbStatus.textContent = 'Mengirim...';
+    fbStatus.className = 'fb-status';
+
+    setTimeout(function () {
+      fbStatus.textContent = 'Terima kasih! Masukan untuk "' + type + '" telah diterima.';
+      fbStatus.className = 'fb-status ok';
+      fbText.value = '';
+      addHistory('FEEDBACK', '[' + type + '] ' + text.substring(0, 60));
+      toast('Masukan berhasil dikirim', 'ok');
+    }, 700);
+  });
+
+  /* ==========================================================
+     11. RIWAYAT PENGGUNAAN
+     ========================================================== */
+
+  var historyList = document.getElementById('history-list');
+  var historyData = [];
+
+  function addHistory(type, text) {
+    historyData.unshift({ type: type, text: text, time: timeNow() });
+    if (historyData.length > 50) historyData.pop();
+    renderHistory();
+  }
+
+  function renderHistory() {
+    historyList.innerHTML = '';
+    if (!historyData.length) {
+      historyList.innerHTML = '<li class="history-empty">Belum ada riwayat penggunaan.</li>';
+      return;
+    }
+    historyData.forEach(function (entry) {
+      var li = document.createElement('li');
+      li.innerHTML =
+        '<span class="hl-type">' + esc(entry.type) + '</span>' +
+        '<span class="hl-text">' + esc(entry.text) + '</span>' +
+        '<span class="hl-time">' + esc(entry.time) + '</span>';
+      historyList.appendChild(li);
+    });
+  }
+
+  document.getElementById('btn-history-clear').addEventListener('click', function () {
+    if (!historyData.length) { toast('Riwayat sudah kosong', 'err'); return; }
+    historyData = [];
+    renderHistory();
+    toast('Riwayat dibersihkan', 'info');
+  });
+
+  renderHistory();
+
+  /* ==========================================================
+     12. KEYBOARD SHORTCUTS & AKSESIBILITAS
+     ========================================================== */
+
+  /* Enter pada input login untuk submit */
+  ['login-email', 'login-pass'].forEach(function (id) {
+    var el = document.getElementById(id);
+    if (el) el.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter') formLogin.dispatchEvent(new Event('submit'));
+    });
+  });
+
+  ['reg-name', 'reg-email', 'reg-pass'].forEach(function (id) {
+    var el = document.getElementById(id);
+    if (el) el.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter') formReg.dispatchEvent(new Event('submit'));
+    });
+  });
+
+  /* Enter pada input isyarat untuk tambah huruf */
+  var signInput = document.getElementById('sign-input');
+  if (signInput) {
+    signInput.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter') btnSignAdd.click();
+    });
+  }
+
+  console.log('%c[Signed] Speech Text & Sign Detector loaded', 'color:#7b5ea7;font-weight:bold');
+
+})();

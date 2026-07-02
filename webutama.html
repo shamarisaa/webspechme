@@ -1,0 +1,275 @@
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Speech Text & Sign Detector</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+  <!-- ===== HEADER ===== -->
+  <header>
+    <h1>Speech Text & Sign Detector</h1>
+    <div class="header-right">
+      <span class="user-badge" id="user-badge">Belum masuk</span>
+      <button id="btn-header-auth" class="btn btn-primary btn-sm">Masuk</button>
+      <button id="btn-header-logout" class="btn btn-outline btn-sm hidden">Keluar</button>
+    </div>
+  </header>
+
+  <!-- ===== LAYOUT 2 KOLOM ===== -->
+  <div class="app-layout">
+
+    <!-- KOLOM KIRI: KONTEN UTAMA -->
+    <main class="content-area">
+
+      <!-- ---- LANDING PAGE ---- -->
+      <section id="page-landing" class="page">
+        <div class="hero">
+          <h2>Ubah suara jadi teks, baca teks jadi suara, dan deteksi isyarat tangan</h2>
+          <p class="hero-desc">Aplikasi ini dirancang khusus untuk membantu penyandang tuna rungu dalam berkomunikasi. Menggabungkan Speech-to-Text, Text-to-Speech, deteksi gerakan tangan secara realtime, serta kamus bahasa isyarat visual.</p>
+        </div>
+        <ul class="feature-grid">
+          <li>
+            <span class="feat-icon" aria-hidden="true">&#127908;</span>
+            <strong>Speech-to-Text realtime</strong>
+            <span>Ubah suara jadi teks langsung di browser</span>
+          </li>
+          <li>
+            <span class="feat-icon" aria-hidden="true">&#128266;</span>
+            <strong>Text-to-Speech</strong>
+            <span>Bacakan teks dengan suara Indonesia</span>
+          </li>
+          <li>
+            <span class="feat-icon" aria-hidden="true">&#9995;</span>
+            <strong>Deteksi gerakan tangan</strong>
+            <span>Kamera mendeteksi isyarat jadi huruf &amp; kata</span>
+          </li>
+          <li>
+            <span class="feat-icon" aria-hidden="true">&#128218;</span>
+            <strong>Kamus bahasa isyarat</strong>
+            <span>Pelajari alfabet BISINDO secara visual</span>
+          </li>
+          <li>
+            <span class="feat-icon" aria-hidden="true">&#127919;</span>
+            <strong>Pelatihan gesture lokal</strong>
+            <span>Latih dan kenali gerakan kustom</span>
+          </li>
+          <li>
+            <span class="feat-icon" aria-hidden="true">&#128172;</span>
+            <strong>Feedback terstruktur</strong>
+            <span>Beri masukan untuk pengembangan fitur</span>
+          </li>
+        </ul>
+        <div class="hero-actions">
+          <button id="btn-go-login" class="btn btn-primary btn-lg">Masuk</button>
+          <button id="btn-go-register" class="btn btn-outline btn-lg">Daftar</button>
+        </div>
+      </section>
+
+      <!-- ---- AUTH PAGE ---- -->
+      <section id="page-auth" class="page hidden">
+        <div class="card">
+          <h2>Masuk atau Daftar</h2>
+          <p class="auth-subtitle">Buat akun untuk mengakses semua fitur deteksi isyarat dan speech.</p>
+          <div class="auth-tabs">
+            <button class="auth-tab active" data-auth="login">Masuk</button>
+            <button class="auth-tab" data-auth="register">Daftar</button>
+          </div>
+          <form id="form-login" class="auth-form" autocomplete="off">
+            <label for="login-email">Email</label>
+            <input id="login-email" type="email" placeholder="nama@email.com" required>
+            <label for="login-pass">Password</label>
+            <input id="login-pass" type="password" placeholder="Minimal 6 karakter" required minlength="6">
+            <button type="submit" class="btn btn-primary btn-full">Masuk</button>
+          </form>
+          <form id="form-register" class="auth-form hidden" autocomplete="off">
+            <label for="reg-name">Nama Lengkap</label>
+            <input id="reg-name" type="text" placeholder="Nama Anda" required>
+            <label for="reg-email">Email</label>
+            <input id="reg-email" type="email" placeholder="nama@email.com" required>
+            <label for="reg-pass">Password</label>
+            <input id="reg-pass" type="password" placeholder="Minimal 6 karakter" required minlength="6">
+            <button type="submit" class="btn btn-primary btn-full">Daftar</button>
+          </form>
+          <button id="btn-auth-back" class="btn btn-ghost btn-full">Kembali ke Halaman Utama</button>
+        </div>
+      </section>
+
+      <!-- ---- APP PAGE ---- -->
+      <section id="page-app" class="page hidden">
+
+        <!-- Tab Bar -->
+        <nav class="tab-bar" role="tablist">
+          <button class="tab active" data-tab="stt" role="tab">Speech → Text</button>
+          <button class="tab" data-tab="tts" role="tab">Text → Speech</button>
+          <button class="tab" data-tab="camera" role="tab">Gerakan Jari</button>
+          <button class="tab" data-tab="kamus" role="tab">Kamus Isyarat</button>
+          <button class="tab" data-tab="feedback" role="tab">Feedback</button>
+          <button class="tab" data-tab="history" role="tab">Riwayat</button>
+        </nav>
+
+        <!-- Tab Panels -->
+        <div class="tab-panels">
+
+          <!-- STT -->
+          <article class="tab-panel" data-panel="stt" role="tabpanel">
+            <div class="card">
+              <h2>Speech → Text</h2>
+              <p>Mulai merekam suara Anda, dan teks akan muncul secara realtime.</p>
+              <div class="stt-controls">
+                <button id="btn-stt-start" class="btn btn-primary">Mulai STT</button>
+                <button id="btn-stt-stop" class="btn btn-outline" disabled>Hentikan</button>
+              </div>
+              <div class="stt-status" id="stt-status">Status: idle</div>
+              <textarea id="stt-output" readonly placeholder="Transkrip akan muncul di sini..."></textarea>
+            </div>
+          </article>
+
+          <!-- TTS -->
+          <article class="tab-panel hidden" data-panel="tts" role="tabpanel">
+            <div class="card">
+              <h2>Text → Speech</h2>
+              <p>Masukkan teks, lalu tekan tombol untuk mendengarkan pembacaan.</p>
+              <textarea id="tts-input" placeholder="Ketik teks di sini, misalnya: Halo, apa kabar?"></textarea>
+              <div class="tts-controls">
+                <select id="tts-voice" aria-label="Pilih suara"></select>
+                <button id="btn-tts-speak" class="btn btn-primary">Bacakan</button>
+                <button id="btn-tts-stop" class="btn btn-outline">Berhenti</button>
+              </div>
+            </div>
+          </article>
+
+          <!-- CAMERA / DETEKSI GERAKAN -->
+          <article class="tab-panel hidden" data-panel="camera" role="tabpanel">
+            <div class="card">
+              <h2>Deteksi Gerakan Jari (Bahasa Isyarat)</h2>
+              <p>Arahkan tangan ke kamera. Sistem akan mendeteksi huruf berdasarkan posisi jari Anda.</p>
+
+              <div class="camera-wrapper">
+                <video id="cam-video" autoplay playsinline muted></video>
+                <canvas id="cam-canvas"></canvas>
+                <div class="cam-overlay" id="cam-overlay">
+                  <span class="cam-loader" id="cam-loader">Memuat model deteksi...</span>
+                  <button id="btn-cam-start" class="btn btn-primary hidden">Aktifkan Kamera</button>
+                </div>
+              </div>
+
+              <div class="detection-result" id="detection-result">
+                <div class="detected-letter" id="detected-letter">?</div>
+                <div class="detected-label" id="detected-label">Menunggu deteksi...</div>
+              </div>
+
+              <div class="sign-text-builder">
+                <label>Teks yang terbentuk:</label>
+                <div class="sign-output" id="sign-output">_</div>
+                <div class="sign-builder-btns">
+                  <button id="btn-sign-add" class="btn btn-primary btn-sm" disabled>Tambah Huruf</button>
+                  <button id="btn-sign-space" class="btn btn-outline btn-sm">Spasi</button>
+                  <button id="btn-sign-back" class="btn btn-outline btn-sm">Hapus</button>
+                  <button id="btn-sign-clear" class="btn btn-ghost btn-sm">Bersihkan</button>
+                </div>
+              </div>
+
+              <div class="cam-status" id="cam-status">Status: kamera belum aktif</div>
+            </div>
+          </article>
+
+          <!-- KAMUS ISYARAT -->
+          <article class="tab-panel hidden" data-panel="kamus" role="tabpanel">
+            <div class="card">
+              <h2>Kamus Bahasa Isyarat (BISINDO)</h2>
+              <p>Pelajari cara membentuk huruf A-Z dengan tangan. Klik huruf untuk melihat detail.</p>
+              <input type="text" id="kamus-search" class="kamus-search" placeholder="Cari huruf atau deskripsi...">
+              <div class="kamus-grid" id="kamus-grid"></div>
+            </div>
+            <!-- Detail Modal -->
+            <div class="modal-overlay hidden" id="kamus-modal">
+              <div class="modal-card">
+                <button class="modal-close" id="kamus-modal-close">&times;</button>
+                <div class="modal-letter" id="modal-letter">A</div>
+                <div class="modal-fingers" id="modal-fingers"></div>
+                <p class="modal-desc" id="modal-desc"></p>
+                <span class="modal-badge" id="modal-badge"></span>
+              </div>
+            </div>
+          </article>
+
+          <!-- FEEDBACK -->
+          <article class="tab-panel hidden" data-panel="feedback" role="tabpanel">
+            <div class="card">
+              <h2>Kritik &amp; Saran</h2>
+              <p>Pilih topik dan berikan masukan agar aplikasi ini terus berkembang.</p>
+              <div class="feedback-radios">
+                <label><input type="radio" name="fb-type" value="Speech-to-Text" checked> Speech-to-Text</label>
+                <label><input type="radio" name="fb-type" value="Text-to-Speech"> Text-to-Speech</label>
+                <label><input type="radio" name="fb-type" value="Deteksi Isyarat"> Deteksi Isyarat</label>
+                <label><input type="radio" name="fb-type" value="Kamus Isyarat"> Kamus Isyarat</label>
+                <label><input type="radio" name="fb-type" value="Umum"> Umum</label>
+              </div>
+              <textarea id="fb-text" placeholder="Tulis kritik atau saran Anda di sini..."></textarea>
+              <button id="btn-fb-submit" class="btn btn-primary">Kirim Masukan</button>
+              <div class="fb-status" id="fb-status"></div>
+            </div>
+          </article>
+
+          <!-- HISTORY -->
+          <article class="tab-panel hidden" data-panel="history" role="tabpanel">
+            <div class="card">
+              <h2>Riwayat Penggunaan</h2>
+              <ul id="history-list" class="history-list"></ul>
+              <button id="btn-history-clear" class="btn btn-ghost btn-full">Bersihkan Riwayat</button>
+            </div>
+          </article>
+
+        </div>
+      </section>
+
+    </main>
+
+    <!-- KOLOM KANAN: FAQ SIDEBAR -->
+    <aside class="faq-sidebar">
+      <h2>FAQ Singkat</h2>
+      <details open>
+        <summary>Apa yang bisa dilakukan aplikasi ini?</summary>
+        <p>Aplikasi dapat menerjemahkan suara ke teks, membacakan teks, dan mendeteksi gesture tangan sederhana menggunakan kamera. Cocok untuk membantu komunikasi penyandang tuna rungu.</p>
+      </details>
+      <details>
+        <summary>Bagaimana cara menggunakan deteksi gerakan jari?</summary>
+        <p>Buka tab "Gerakan Jari", aktifkan kamera, lalu arahkan satu tangan ke depan kamera. Sistem akan mengenali huruf berdasarkan posisi jari yang terangkat.</p>
+      </details>
+      <details>
+        <summary>Bisakah data training disimpan?</summary>
+        <p>Pada versi prototipe ini, deteksi menggunakan heuristic berbasis posisi jari. Untuk akurasi lebih tinggi, bisa dikembangkan dengan TensorFlow.js dan dataset kustom.</p>
+      </details>
+      <details>
+        <summary>Apakah data saya aman?</summary>
+        <p>Seluruh pemrosesan dilakukan di browser Anda (lokal). Tidak ada data yang dikirim ke server. Kamera hanya digunakan secara lokal untuk deteksi.</p>
+      </details>
+      <details>
+        <summary>Browser apa yang didukung?</summary>
+        <p>Chrome dan Edge memberikan pengalaman terbaik karena mendukung Web Speech API dan MediaPipe. Firefox mendukung sebagian fitur.</p>
+      </details>
+    </aside>
+
+  </div>
+
+  <!-- ===== FOOTER ===== -->
+  <footer>
+    <small>Prototipe untuk demonstrasi. Dapat dikembangkan lebih lanjut dengan model ML terlatih.</small>
+  </footer>
+
+  <!-- ===== TOAST CONTAINER ===== -->
+  <div class="toast-box" id="toast-box"></div>
+
+  <!-- ===== SCRIPTS ===== -->
+<!-- MediaPipe: deteksi tangan (engine yang sama dengan TensorFlow.js hand-pose-detection) -->
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1675469240/hands.js" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils@0.3.1675466862/camera_utils.js" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils@0.3.1675466124/drawing_utils.js" crossorigin="anonymous"></script>
+
+<!-- Logika aplikasi -->
+<script src="app.js"></script>
